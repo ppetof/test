@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iron Peak Hard Enduro 2026</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --amber: #e8a020; }
+  body { background: #000; color: #fff; font-family: Arial, sans-serif; overflow-x: hidden; }
+
+  #heroContainer { position: relative; }
+
+  .hero-sticky {
+    position: sticky; top: 0;
+    width: 100%; height: 100vh; overflow: hidden;
+  }
+  canvas#frameCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  .canvas-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom,rgba(0,0,0,.38) 0%,rgba(0,0,0,0) 35%,rgba(0,0,0,0) 60%,rgba(0,0,0,.6) 100%);
+    pointer-events: none;
+  }
+
+  #loadingOverlay {
+    position: absolute; inset: 0; background: #000;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 100; transition: opacity .6s ease;
+  }
+  #loadingOverlay.hidden { opacity: 0; pointer-events: none; }
+  .loader-logo { font-size: 34px; font-weight: 900; letter-spacing: .1em; color: var(--amber); margin-bottom: 6px; }
+  .loader-sub { font-size: 11px; letter-spacing: .16em; color: rgba(255,255,255,.3); margin-bottom: 24px; }
+  .loader-bar-bg { width: 220px; height: 2px; background: rgba(255,255,255,.12); border-radius: 1px; }
+  .loader-bar-fill { height: 2px; background: var(--amber); border-radius: 1px; width: 0%; transition: width .08s linear; }
+  .loader-text { font-size: 10px; letter-spacing: .1em; color: rgba(255,255,255,.3); margin-top: 10px; }
+
+  .hud-title {
+    position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
+    text-align: center; pointer-events: none; z-index: 10;
+    transition: opacity .3s ease; white-space: nowrap;
+  }
+  .hud-title h1 { font-size: clamp(28px,4.5vw,60px); font-weight: 900; letter-spacing: .07em; text-shadow: 0 2px 28px rgba(0,0,0,.75); line-height: 1.05; }
+  .hud-title h1 span { color: var(--amber); }
+  .hud-title .sub { font-size: clamp(10px,1.2vw,13px); letter-spacing: .18em; color: rgba(255,255,255,.52); margin-top: 8px; }
+
+  .scroll-hint {
+    position: absolute; bottom: 38px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    z-index: 10; pointer-events: none; transition: opacity .5s ease;
+  }
+  .scroll-hint span { font-size: 10px; letter-spacing: .16em; color: rgba(255,255,255,.35); }
+  .scroll-hint .arr { width: 14px; height: 14px; border-right: 1.5px solid rgba(255,255,255,.28); border-bottom: 1.5px solid rgba(255,255,255,.28); transform: rotate(45deg); animation: ab .9s ease-in-out infinite alternate; }
+  .scroll-hint.hidden { opacity: 0; }
+  @keyframes ab { from{transform:rotate(45deg) translate(-2px,-2px)} to{transform:rotate(45deg) translate(2px,2px)} }
+
+  .info-panel { position: absolute; top: 50%; transform: translateY(-50%); width: 230px; z-index: 10; pointer-events: none; display: flex; flex-direction: column; gap: 14px; }
+  .info-panel.left  { left: clamp(16px,4vw,64px); }
+  .info-panel.right { right: clamp(16px,4vw,64px); }
+  .info-card {
+    background: rgba(0,0,0,.55); border: 0.5px solid rgba(255,255,255,.1);
+    border-left: 2px solid var(--amber); padding: 13px 16px; border-radius: 0 6px 6px 0;
+    opacity: 0; transform: translateX(-22px); transition: opacity .5s ease, transform .5s ease;
+  }
+  .info-panel.right .info-card { border-left: none; border-right: 2px solid var(--amber); border-radius: 6px 0 0 6px; transform: translateX(22px); }
+  .info-card.visible { opacity: 1; transform: translateX(0); }
+  .info-card .lbl { font-size: 9px; letter-spacing: .14em; color: var(--amber); margin-bottom: 4px; text-transform: uppercase; }
+  .info-card .val { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.2; }
+  .info-card .det { font-size: 11px; color: rgba(255,255,255,.42); margin-top: 3px; }
+
+  .progress-wrap { position: absolute; bottom: 0; left: 0; right: 0; padding: 0 44px 22px; z-index: 10; pointer-events: none; opacity: 0; transition: opacity .5s ease; }
+  .progress-wrap.visible { opacity: 1; }
+  .progress-row { display: flex; align-items: center; gap: 12px; }
+  .pbar-bg { flex: 1; height: 2px; background: rgba(255,255,255,.15); border-radius: 1px; position: relative; }
+  .pbar-fill { position: absolute; left: 0; top: 0; height: 2px; background: var(--amber); border-radius: 1px; width: 0%; }
+  .pbar-dot { position: absolute; top: -4px; width: 10px; height: 10px; background: var(--amber); border-radius: 50%; transform: translateX(-50%); box-shadow: 0 0 8px rgba(232,160,32,.8); }
+  .pbar-km { font-size: 10px; color: rgba(255,255,255,.35); letter-spacing: .07em; white-space: nowrap; }
+  .stage-lbl { font-size: 10px; letter-spacing: .12em; color: rgba(255,255,255,.42); margin-top: 7px; text-align: center; }
+
+  .ob-flash { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; z-index: 20; pointer-events: none; opacity: 0; transition: opacity .3s ease; }
+  .ob-flash.visible { opacity: 1; }
+  .ob-main { font-size: clamp(22px,3.5vw,40px); font-weight: 900; letter-spacing: .1em; text-shadow: 0 2px 24px rgba(0,0,0,.9); }
+  .ob-sub { font-size: clamp(10px,1.2vw,13px); color: var(--amber); letter-spacing: .2em; margin-top: 5px; display: block; }
+
+  .after-hero { background: #060606; padding: 100px 40px; text-align: center; border-top: 1px solid rgba(232,160,32,.15); }
+  .after-hero h2 { font-size: clamp(28px,4vw,50px); font-weight: 900; color: var(--amber); letter-spacing: .08em; }
+  .after-hero p { color: rgba(255,255,255,.42); margin-top: 18px; font-size: 15px; max-width: 520px; margin-inline: auto; line-height: 1.8; }
+  .cta-btn { display: inline-block; margin-top: 32px; padding: 14px 44px; background: var(--amber); color: #000; font-weight: 900; font-size: 13px; letter-spacing: .1em; border-radius: 4px; text-decoration: none; }
+  .cta-btn:hover { background: #ffb830; }
+
+  @media (max-width: 768px) { .info-panel { width: 165px; } .info-panel.left { left: 10px; } .info-panel.right { right: 10px; } }
+  @media (max-width: 540px) { .info-panel { display: none; } }
+</style>
+</head>
+<body>
+
+<div id="heroContainer">
+  <div class="hero-sticky">
+    <canvas id="frameCanvas"></canvas>
+    <div class="canvas-overlay"></div>
+
+    <div id="loadingOverlay">
+      <div class="loader-logo">IRON PEAK</div>
+      <div class="loader-sub">HARD ENDURO 2026</div>
+      <div class="loader-bar-bg"><div class="loader-bar-fill" id="loaderFill"></div></div>
+      <div class="loader-text" id="loaderText">NAČÍTAVAM 0 / 139</div>
+    </div>
+
+    <div class="hud-title" id="hudTitle">
+      <h1>IRON PEAK<br><span>HARD ENDURO</span></h1>
+      <div class="sub">24 – 26 OKTÓBRA 2026 &nbsp;·&nbsp; SLOVENSKO</div>
+    </div>
+
+    <div class="scroll-hint" id="scrollHint"><span>SCROLLUJ</span><div class="arr"></div></div>
+
+    <div class="info-panel left">
+      <div class="info-card" id="c1"><div class="lbl">Dátum</div><div class="val">24 – 26 OKT 2026</div><div class="det">Slovensko</div></div>
+      <div class="info-card" id="c2"><div class="lbl">Trasa</div><div class="val">87 km</div><div class="det">Prevýšenie 3 400 m</div></div>
+      <div class="info-card" id="c3"><div class="lbl">Kategórie</div><div class="val">EXTREME / PRO</div><div class="det">Amateur · Junior</div></div>
+    </div>
+
+    <div class="info-panel right">
+      <div class="info-card" id="c4"><div class="lbl">Registrácia</div><div class="val">OTVORENÁ</div><div class="det">Uzávierka 1. okt 2026</div></div>
+      <div class="info-card" id="c5"><div class="lbl">Terén</div><div class="val">EXTREME</div><div class="det">Skaly · blato · potoky</div></div>
+      <div class="info-card" id="c6"><div class="lbl">Prize pool</div><div class="val">€ 5 000</div><div class="det">Celkové ceny</div></div>
+    </div>
+
+    <div class="ob-flash" id="obFlash">
+      <div class="ob-main" id="obMain">POPADANÉ STROMY</div>
+      <span class="ob-sub" id="obSub">KM 12.4</span>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-row">
+        <span class="pbar-km">ŠTART</span>
+        <div class="pbar-bg"><div class="pbar-fill" id="pbarFill"></div><div class="pbar-dot" id="pbarDot"></div></div>
+        <span class="pbar-km">CIEĽ 87 km</span>
+      </div>
+      <div class="stage-lbl" id="stageLbl">LESNÝ CHODNÍK</div>
+    </div>
+  </div>
+</div>
+
+<div class="after-hero">
+  <h2>REGISTRUJ SA</h2>
+  <p>Najťažší hard enduro závod na Slovensku. Priprav sa na extrémny terén — popadané stromy, balvany, blato a brodenie potokov.</p>
+  <a href="#" class="cta-btn">REGISTRÁCIA 2026</a>
+</div>
+
+<script>
+const CFG = {
+  frameDir:    'frames/',
+  framePrefix: 'frame_',
+  frameSuffix: '.jpg',
+  frameDigits: 5,
+  frameStart:  1,
+  frameCount:  139,
+  pxPerFrame:  14,
+
+  stages: [
+    { from: 0,    to: 0.20, label: 'LESNÝ CHODNÍK' },
+    { from: 0.20, to: 0.38, label: 'POPADANÉ STROMY' },
+    { from: 0.38, to: 0.55, label: 'KAMENNÝ ÚSEK' },
+    { from: 0.55, to: 0.70, label: 'BLATO & KALUŽE' },
+    { from: 0.70, to: 0.84, label: 'KAMENNÝ SKOK' },
+    { from: 0.84, to: 1.00, label: 'BRODENIE POTOKOM' },
+  ],
+
+  obstacles: [
+    { frame: 20,  main: 'POPADANÉ STROMY',  sub: 'KM 12.4' },
+    { frame: 50,  main: 'KAMENNÝ ÚSEK',     sub: 'KM 28.7' },
+    { frame: 75,  main: 'BLATO & KALUŽE',   sub: 'KM 41.2' },
+    { frame: 100, main: 'KAMENNÝ SKOK',     sub: 'KM 55.8' },
+    { frame: 122, main: 'BRODENIE POTOKOM', sub: 'KM 68.3' },
+  ],
+
+  cardTriggers: {
+    left:  [0.05, 0.22, 0.48],
+    right: [0.14, 0.38, 0.62],
+  },
+};
+
+const heroContainer = document.getElementById('heroContainer');
+
+function setHeight() {
+  heroContainer.style.height = (CFG.frameCount * CFG.pxPerFrame + window.innerHeight) + 'px';
+}
+setHeight();
+window.addEventListener('resize', setHeight);
+
+const canvas  = document.getElementById('frameCanvas');
+const ctx     = canvas.getContext('2d');
+const overlay = document.getElementById('loadingOverlay');
+const loaderF = document.getElementById('loaderFill');
+const loaderT = document.getElementById('loaderText');
+
+let frames   = new Array(CFG.frameCount);
+let loaded   = 0;
+let ready    = false;
+let curFrame = 0;
+
+function pad(n) { return String(n).padStart(CFG.frameDigits, '0'); }
+
+function resizeCanvas() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  drawFrame(curFrame);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function drawFrame(idx) {
+  const img = frames[idx];
+  if (!img || !img.complete || !img.naturalWidth) return;
+  const cw = canvas.width, ch = canvas.height;
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  const scale = Math.max(cw / iw, ch / ih);
+  const dw = iw * scale, dh = ih * scale;
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+}
+
+for (let i = 0; i < CFG.frameCount; i++) {
+  const img = new Image();
+  img.src = CFG.frameDir + CFG.framePrefix + pad(CFG.frameStart + i) + CFG.frameSuffix;
+  img.onload = img.onerror = () => {
+    loaded++;
+    const pct = Math.round(loaded / CFG.frameCount * 100);
+    loaderF.style.width = pct + '%';
+    loaderT.textContent = 'NAČÍTAVAM ' + loaded + ' / ' + CFG.frameCount;
+    if (loaded === CFG.frameCount) onReady();
+  };
+  frames[i] = img;
+}
+
+function onReady() {
+  ready = true;
+  overlay.classList.add('hidden');
+  drawFrame(0);
+  document.getElementById('progressWrap').classList.add('visible');
+  updateScroll();
+}
+
+const hudTitle   = document.getElementById('hudTitle');
+const scrollHint = document.getElementById('scrollHint');
+const pbarFill   = document.getElementById('pbarFill');
+const pbarDot    = document.getElementById('pbarDot');
+const stageLbl   = document.getElementById('stageLbl');
+const obFlash    = document.getElementById('obFlash');
+const obMain     = document.getElementById('obMain');
+const obSub      = document.getElementById('obSub');
+const leftCards  = ['c1','c2','c3'].map(id => document.getElementById(id));
+const rightCards = ['c4','c5','c6'].map(id => document.getElementById(id));
+
+let lastObFrame = -99;
+let obTimer = null;
+
+function updateScroll() {
+  const containerTop = heroContainer.getBoundingClientRect().top + window.scrollY;
+  const scrolled     = window.scrollY - containerTop;
+  const totalPx      = CFG.frameCount * CFG.pxPerFrame;
+  const progress     = Math.max(0, Math.min(1, scrolled / totalPx));
+
+  const fi = Math.min(Math.floor(progress * CFG.frameCount), CFG.frameCount - 1);
+  if (fi !== curFrame && ready) { curFrame = fi; drawFrame(curFrame); }
+
+  scrollHint.classList.toggle('hidden', scrolled > 60);
+  hudTitle.style.opacity = Math.max(0, 1 - progress * 5).toFixed(2);
+
+  const pct = (progress * 100).toFixed(1);
+  pbarFill.style.width = pct + '%';
+  pbarDot.style.left   = pct + '%';
+
+  const st = CFG.stages.find(s => progress >= s.from && progress < s.to)
+           || CFG.stages[CFG.stages.length - 1];
+  stageLbl.textContent = st.label;
+
+  CFG.cardTriggers.left.forEach((thr, i)  => leftCards[i].classList.toggle('visible',  progress >= thr));
+  CFG.cardTriggers.right.forEach((thr, i) => rightCards[i].classList.toggle('visible', progress >= thr));
+
+  const ob = CFG.obstacles.find(o => Math.abs(fi - o.frame) < 5);
+  if (ob && ob.frame !== lastObFrame) {
+    lastObFrame = ob.frame;
+    obMain.textContent = ob.main;
+    obSub.textContent  = ob.sub;
+    obFlash.classList.add('visible');
+    clearTimeout(obTimer);
+    obTimer = setTimeout(() => obFlash.classList.remove('visible'), 1800);
+  }
+}
+
+window.addEventListener('scroll', updateScroll, { passive: true });
+</script>
+</body>
+</html>
